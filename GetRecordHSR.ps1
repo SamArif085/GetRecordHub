@@ -5,12 +5,16 @@ $ProgressPreference = 'SilentlyContinue'
 Write-Host "Mencari URL Warp History Honkai: Star Rail..." -ForegroundColor Cyan
 
 $gamePath = $null
+function Test-IsAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
 $localLowPaths = @(
     "$env:USERPROFILE\AppData\LocalLow\Cognosphere\StarRail\Player.log",
     "$env:USERPROFILE\AppData\LocalLow\miHoYo\StarRail\Player.log"
 )
-
 foreach ($logPath in $localLowPaths) {
     if (Test-Path $logPath) {
         $logContent = Get-Content $logPath -Raw -ErrorAction SilentlyContinue
@@ -27,35 +31,51 @@ foreach ($logPath in $localLowPaths) {
 }
 
 if (-not $gamePath) {
-    $proc = Get-Process -Name "StarRail" -ErrorAction SilentlyContinue
-    if ($proc) {
-        $procPath = Split-Path -Path $proc.Path -Parent
-        if (Test-Path (Join-Path $procPath "StarRail_Data")) {
-            $gamePath = $procPath
-            Write-Host "Lokasi game ditemukan dari game yang sedang berjalan!" -ForegroundColor Green
+    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | 
+    Where-Object { $_.Name -like "*Star*" -or $_.Name -like "*Honkai*" -or $_.CommandLine -like "*StarRail*" }
+
+    foreach ($p in $procs) {
+        if ($p.ExecutablePath) {
+            $pDir = Split-Path -Path $p.ExecutablePath -Parent
+            
+            # Cek apakah folder tersebut tempat game (ada StarRail_Data)
+            if (Test-Path (Join-Path $pDir "StarRail_Data")) {
+                $gamePath = $pDir
+                Write-Host "Lokasi game ditemukan dari proses aktif ($($p.Name))!" -ForegroundColor Green
+                break
+            }
         }
     }
 }
 
 if (-not $gamePath) {
     $regPaths = @(
-        "HKLM:\SOFTWARE\Cognosphere\Star Rail",
-        "HKLM:\SOFTWARE\miHoYo\Star Rail",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Honkai: Star Rail",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+        "HKCU:\Software\Cognosphere\HYP\1_1\hkrpg_global",
+        "HKCU:\Software\miHoYo\HYP\1_1\hkrpg_global",
+        "HKCU:\Software\Cognosphere\HYP\1_1\hkrpg_cn",
         "HKCU:\Software\Cognosphere\Star Rail",
-        "HKCU:\Software\miHoYo\Star Rail"
+        "HKCU:\Software\miHoYo\Star Rail",
+        "HKLM:\SOFTWARE\Cognosphere\Star Rail",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Honkai: Star Rail"
     )
+
     foreach ($reg in $regPaths) {
         if (Test-Path $reg) {
             $props = Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue
-            $dir = $props.InstallLocation
-            if (-not $dir) { $dir = $props.Path }
-            if ($dir -and (Test-Path (Join-Path $dir "StarRail_Data"))) {
-                $gamePath = $dir
-                Write-Host "Lokasi game ditemukan lewat Registry Windows!" -ForegroundColor Green
-                break
+            $targetDir = $props.GameInstallPath
+            if (-not $targetDir) { $targetDir = $props.InstallLocation }
+            if (-not $targetDir) { $targetDir = $props.Path }
+            if ($targetDir -is [byte[]]) {
+                $targetDir = [System.Text.Encoding]::UTF8.GetString($targetDir).Trim("`0").Trim()
+            }
+            if ($targetDir) {
+                $targetDir = [string]$targetDir -replace '"', ''
+                if (Test-Path (Join-Path $targetDir "StarRail_Data")) {
+                    $gamePath = $targetDir
+                    Write-Host "Lokasi game ditemukan lewat Registry: $reg" -ForegroundColor Green
+                    break
+                }
             }
         }
     }
@@ -64,7 +84,6 @@ if (-not $gamePath) {
 if (-not $gamePath) {
     Write-Host "Pemeriksaan jalur folder umum di seluruh disk..." -ForegroundColor Yellow
     $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    
     $commonSubPaths = @(
         "online game\HoYoPlay\games\Star Rail",
         "online game\HoYoPlay\games\Star Rail Games",
@@ -81,7 +100,8 @@ if (-not $gamePath) {
         "Star Rail",
         "Honkai Star Rail",
         "Program Files\Star Rail Games",
-        "Program Files\HoYoPlay\games\Star Rail"
+        "Program Files\HoYoPlay\games\Star Rail",
+        "Program Files (x86)\Star Rail Games"
     )
 
     foreach ($drive in $drives) {
@@ -94,6 +114,23 @@ if (-not $gamePath) {
             }
         }
         if ($gamePath) { break }
+    }
+}
+
+if (-not $gamePath -and -not (Test-IsAdmin)) {
+    Write-Host "`nMetode otomatis biasa gagal. Meminta hak akses Administrator untuk memindai ulang..." -ForegroundColor Yellow
+    
+    # Menyiapkan argumen untuk menjalankan ulang skrip saat ini menggunakan Admin
+    if ($MyInvocation.MyCommand.Path) {
+        $scriptPath = $MyInvocation.MyCommand.Path
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
+        return
+    }
+    else {
+        # Jika dipanggil via 'irm | iex', jalankan kembali perintah web request dengan Administrator
+        $cmd = '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (irm "https://raw.githubusercontent.com/SamArif085/GetRecordZZZ/main/GetRecordHSR.ps1")'
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$cmd`"" -Verb RunAs
+        return
     }
 }
 
