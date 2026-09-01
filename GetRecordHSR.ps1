@@ -4,37 +4,82 @@ Add-Type -AssemblyName System.Web
 $ProgressPreference = 'SilentlyContinue'
 Write-Host "Mencari URL Warp History Honkai: Star Rail..." -ForegroundColor Cyan
 
-# 1. Coba baca dari Player.log (Cognosphere / miHoYo)
-$localLowPath = "$env:USERPROFILE\AppData\LocalLow\Cognosphere\StarRail"
-if (-not (Test-Path $localLowPath)) {
-    $localLowPath = "$env:USERPROFILE\AppData\LocalLow\miHoYo\StarRail"
-}
-$playerLog = Join-Path $localLowPath "Player.log"
-
 $gamePath = $null
 
-if (Test-Path $playerLog) {
-    Write-Host "Membaca log dari LocalLow..." -ForegroundColor Green
-    $logContent = Get-Content $playerLog -Raw -ErrorAction SilentlyContinue
-    
-    if ($logContent -match "\[Subsystems\] Discovering subsystems at path (.*)") {
-        $rawPath = $matches[1].Trim()
-        $gamePath = $rawPath.Replace("UnitySubsystems", "").Trim()
+$localLowPaths = @(
+    "$env:USERPROFILE\AppData\LocalLow\Cognosphere\StarRail\Player.log",
+    "$env:USERPROFILE\AppData\LocalLow\miHoYo\StarRail\Player.log"
+)
+
+foreach ($logPath in $localLowPaths) {
+    if (Test-Path $logPath) {
+        $logContent = Get-Content $logPath -Raw -ErrorAction SilentlyContinue
+        if ($logContent -match "\[Subsystems\] Discovering subsystems at path (.*)") {
+            $rawPath = $matches[1].Trim()
+            $possiblePath = $rawPath.Replace("UnitySubsystems", "").Trim()
+            if (Test-Path $possiblePath) {
+                $gamePath = $possiblePath
+                Write-Host "Lokasi game ditemukan lewat Player.log!" -ForegroundColor Green
+                break
+            }
+        }
     }
 }
 
-# 2. Fallback jika log tidak ditemukan / tidak valid (Menggunakan path Anda)
-if (-not $gamePath -or -not (Test-Path $gamePath)) {
-    $gamePath = "G:\Game\HoYoPlay\games\Star Rail Games"
+if (-not $gamePath) {
+    $regPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Honkai: Star Rail",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail"
+    )
+    foreach ($reg in $regPaths) {
+        if (Test-Path $reg) {
+            $installDir = (Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue).InstallLocation
+            if ($installDir -and (Test-Path $installDir)) {
+                $gamePath = $installDir
+                Write-Host "Lokasi game ditemukan lewat Windows Registry!" -ForegroundColor Green
+                break
+            }
+        }
+    }
 }
 
-Write-Host "Lokasi Game: $gamePath" -ForegroundColor Cyan
+if (-not $gamePath) {
+    Write-Host "Mencari lokasi install Star Rail di seluruh disk..." -ForegroundColor Yellow
+    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
+    $commonSubPaths = @(
+        "HoYoPlay\games\Star Rail Games",
+        "Star Rail\Games",
+        "Program Files\Star Rail Games",
+        "Games\Star Rail Games"
+    )
 
-# 3. Cari cache data_2
+    foreach ($drive in $drives) {
+        foreach ($sub in $commonSubPaths) {
+            $checkPath = Join-Path $drive $sub
+            if (Test-Path $checkPath) {
+                $gamePath = $checkPath
+                Write-Host "Lokasi game ditemukan di: $gamePath" -ForegroundColor Green
+                break
+            }
+        }
+        if ($gamePath) { break }
+    }
+}
+
+if (-not $gamePath -or -not (Test-Path $gamePath)) {
+    Write-Host "`nGagal menemukan folder install Honkai: Star Rail secara otomatis." -ForegroundColor Red
+    Write-Host "Pastikan game pernah dijalankan minimal satu kali!" -ForegroundColor Yellow
+    Read-Host "`nTekan ENTER untuk keluar..."
+    return
+}
+
+Write-Host "Lokasi Game Terverifikasi: $gamePath" -ForegroundColor Cyan
+
 $webCachesDir = Join-Path $gamePath "StarRail_Data\webCaches"
 $latestCacheFile = Get-ChildItem -Path $webCachesDir -Recurse -Filter "data_2" -ErrorAction SilentlyContinue | 
-    Sort-Object LastWriteTime -Descending | 
-    Select-Object -First 1
+Sort-Object LastWriteTime -Descending | 
+Select-Object -First 1
 
 if (-not $latestCacheFile) {
     Write-Host "`nFile data_2 tidak ditemukan di $webCachesDir" -ForegroundColor Red
@@ -73,7 +118,8 @@ for ($i = $cacheSplit.Length - 1; $i -ge 0; $i--) {
                 $latestUrl = $uri.Scheme + "://" + $uri.Host + $uri.AbsolutePath + "?" + $query.ToString()
                 break
             }
-        } catch {
+        }
+        catch {
             continue
         }
     }
@@ -83,7 +129,8 @@ if ($latestUrl) {
     Set-Clipboard -Value $latestUrl
     Write-Host "`nSUKSES! URL Warp History HSR berhasil ditemukan dan disalin ke Clipboard." -ForegroundColor Green
     Write-Host "Silakan Paste (Ctrl+V) ke website tracker pilihanmu." -ForegroundColor Yellow
-} else {
+}
+else {
     Write-Host "`nGagal menemukan URL valid di file cache. Buka ulang menu Warp History di dalam game!" -ForegroundColor Red
 }
 
