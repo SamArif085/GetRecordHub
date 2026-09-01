@@ -51,29 +51,22 @@ if (-not $gamePath) {
 }
 
 if (-not $gamePath) {
-    Write-Host "Mencari lokasi install Star Rail di seluruh disk..." -ForegroundColor Yellow
+    Write-Host "Mencari lokasi install Star Rail secara dinamis di seluruh disk..." -ForegroundColor Yellow
     $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    
-    $commonSubPaths = @(
-        "Game\HoYoPlay\games\Star Rail Games",
-        "Games\HoYoPlay\games\Star Rail Games",
-        "HoYoPlay\games\Star Rail Games",
-        "Star Rail\Games",
+    $targetFolderNames = @(
         "Star Rail Games",
         "Star Rail",
-        "Honkai Star Rail",
-        "Games\Star Rail",
-        "Games\Honkai Star Rail",
-        "Program Files\Star Rail Games",
-        "Program Files\HoYoPlay\games\Star Rail Games",
-        "Program Files (x86)\Star Rail Games"
+        "Honkai: Star Rail",
+        "Honkai Star Rail"
     )
 
     foreach ($drive in $drives) {
-        foreach ($sub in $commonSubPaths) {
-            $checkPath = Join-Path $drive $sub
-            if (Test-Path (Join-Path $checkPath "StarRail_Data")) {
-                $gamePath = $checkPath
+        $matchedFolders = Get-ChildItem -Path $drive -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
+        Where-Object { $targetFolderNames -contains $_.Name }
+
+        foreach ($folder in $matchedFolders) {
+            if (Test-Path (Join-Path $folder.FullName "StarRail_Data")) {
+                $gamePath = $folder.FullName
                 Write-Host "Lokasi game ditemukan di: $gamePath" -ForegroundColor Green
                 break
             }
@@ -83,10 +76,10 @@ if (-not $gamePath) {
 }
 
 if (-not $gamePath) {
-    Write-Host "Melakukan pemindaian cepat StarRail.exe di seluruh disk..." -ForegroundColor Yellow
+    Write-Host "Melakukan pemindaian cepat file StarRail.exe di seluruh disk..." -ForegroundColor Yellow
     $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
     foreach ($drive in $drives) {
-        $foundExe = Get-ChildItem -Path $drive -Filter "StarRail.exe" -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1
+        $foundExe = Get-ChildItem -Path $drive -Filter "StarRail.exe" -Recurse -Depth 5 -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($foundExe) {
             $gamePath = $foundExe.DirectoryName
             Write-Host "StarRail.exe ditemukan di: $gamePath" -ForegroundColor Green
@@ -97,11 +90,12 @@ if (-not $gamePath) {
 
 if (-not $gamePath -or -not (Test-Path $gamePath)) {
     Write-Host "`nGagal menemukan folder install Star Rail secara otomatis." -ForegroundColor Red
-    $userPath = Read-Host "Silakan masukkan/paste folder lokasi Star Rail secara manual (misal D:\Games\Star Rail Games)"
-    if ($userPath -and (Test-Path $userPath)) {
+    $userPath = Read-Host "Silakan paste folder lokasi Star Rail secara manual (misal C:\online game\HoYoPlay\games\Star Rail)"
+    if ($userPath -and (Test-Path (Join-Path $userPath "StarRail_Data"))) {
         $gamePath = $userPath
-    } else {
-        Write-Host "Folder tidak valid. Proses dibatalkan." -ForegroundColor Red
+    }
+    else {
+        Write-Host "Folder tidak valid / tidak memiliki StarRail_Data. Proses dibatalkan." -ForegroundColor Red
         Read-Host "Tekan ENTER untuk keluar..."
         return
     }
@@ -110,14 +104,9 @@ if (-not $gamePath -or -not (Test-Path $gamePath)) {
 Write-Host "Lokasi Game Terverifikasi: $gamePath" -ForegroundColor Cyan
 
 $webCachesDir = Join-Path $gamePath "StarRail_Data\webCaches"
-if (-not (Test-Path $webCachesDir)) {
-    # Coba alternatif subfolder cache
-    $webCachesDir = Join-Path $gamePath "StarRail_Data"
-}
-
 $latestCacheFile = Get-ChildItem -Path $webCachesDir -Recurse -Filter "data_2" -ErrorAction SilentlyContinue | 
-    Sort-Object LastWriteTime -Descending | 
-    Select-Object -First 1
+Sort-Object LastWriteTime -Descending | 
+Select-Object -First 1
 
 if (-not $latestCacheFile) {
     Write-Host "`nFile data_2 tidak ditemukan di $webCachesDir" -ForegroundColor Red
@@ -156,7 +145,8 @@ for ($i = $cacheSplit.Length - 1; $i -ge 0; $i--) {
                 $latestUrl = $uri.Scheme + "://" + $uri.Host + $uri.AbsolutePath + "?" + $query.ToString()
                 break
             }
-        } catch {
+        }
+        catch {
             continue
         }
     }
@@ -166,7 +156,8 @@ if ($latestUrl) {
     Set-Clipboard -Value $latestUrl
     Write-Host "`nSUKSES! URL Warp History HSR berhasil ditemukan dan disalin ke Clipboard." -ForegroundColor Green
     Write-Host "Silakan Paste (Ctrl+V) ke website tracker pilihanmu." -ForegroundColor Yellow
-} else {
+}
+else {
     Write-Host "`nGagal menemukan URL valid di file cache. Buka ulang menu Warp History di dalam game!" -ForegroundColor Red
 }
 
