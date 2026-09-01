@@ -47,11 +47,15 @@ if (-not $gamePath) {
 if (-not $gamePath) {
     Write-Host "Mencari lokasi install Star Rail di seluruh disk..." -ForegroundColor Yellow
     $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
+    
     $commonSubPaths = @(
+        "Game\HoYoPlay\games\Star Rail Games",
+        "Games\HoYoPlay\games\Star Rail Games",
         "HoYoPlay\games\Star Rail Games",
         "Star Rail\Games",
+        "Star Rail Games",
         "Program Files\Star Rail Games",
-        "Games\Star Rail Games"
+        "Program Files\HoYoPlay\games\Star Rail Games"
     )
 
     foreach ($drive in $drives) {
@@ -69,7 +73,7 @@ if (-not $gamePath) {
 
 if (-not $gamePath -or -not (Test-Path $gamePath)) {
     Write-Host "`nGagal menemukan folder install Honkai: Star Rail secara otomatis." -ForegroundColor Red
-    Write-Host "Pastikan game pernah dijalankan minimal satu kali!" -ForegroundColor Yellow
+    Write-Host "Pastikan menu Warp History di dalam game SUDAH pernah dibuka!" -ForegroundColor Yellow
     Read-Host "`nTekan ENTER untuk keluar..."
     return
 }
@@ -78,8 +82,8 @@ Write-Host "Lokasi Game Terverifikasi: $gamePath" -ForegroundColor Cyan
 
 $webCachesDir = Join-Path $gamePath "StarRail_Data\webCaches"
 $latestCacheFile = Get-ChildItem -Path $webCachesDir -Recurse -Filter "data_2" -ErrorAction SilentlyContinue | 
-Sort-Object LastWriteTime -Descending | 
-Select-Object -First 1
+    Sort-Object LastWriteTime -Descending | 
+    Select-Object -First 1
 
 if (-not $latestCacheFile) {
     Write-Host "`nFile data_2 tidak ditemukan di $webCachesDir" -ForegroundColor Red
@@ -118,8 +122,7 @@ for ($i = $cacheSplit.Length - 1; $i -ge 0; $i--) {
                 $latestUrl = $uri.Scheme + "://" + $uri.Host + $uri.AbsolutePath + "?" + $query.ToString()
                 break
             }
-        }
-        catch {
+        } catch {
             continue
         }
     }
@@ -129,8 +132,7 @@ if ($latestUrl) {
     Set-Clipboard -Value $latestUrl
     Write-Host "`nSUKSES! URL Warp History HSR berhasil ditemukan dan disalin ke Clipboard." -ForegroundColor Green
     Write-Host "Silakan Paste (Ctrl+V) ke website tracker pilihanmu." -ForegroundColor Yellow
-}
-else {
+} else {
     Write-Host "`nGagal menemukan URL valid di file cache. Buka ulang menu Warp History di dalam game!" -ForegroundColor Red
 }
 
