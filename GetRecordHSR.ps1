@@ -27,6 +27,17 @@ foreach ($logPath in $localLowPaths) {
 }
 
 if (-not $gamePath) {
+    $proc = Get-Process -Name "StarRail" -ErrorAction SilentlyContinue
+    if ($proc) {
+        $procPath = Split-Path -Path $proc.Path -Parent
+        if (Test-Path (Join-Path $procPath "StarRail_Data")) {
+            $gamePath = $procPath
+            Write-Host "Lokasi game ditemukan dari game yang sedang berjalan!" -ForegroundColor Green
+        }
+    }
+}
+
+if (-not $gamePath) {
     $regPaths = @(
         "HKLM:\SOFTWARE\Cognosphere\Star Rail",
         "HKLM:\SOFTWARE\miHoYo\Star Rail",
@@ -51,22 +62,33 @@ if (-not $gamePath) {
 }
 
 if (-not $gamePath) {
-    Write-Host "Mencari lokasi install Star Rail secara dinamis di seluruh disk..." -ForegroundColor Yellow
+    Write-Host "Pemeriksaan jalur folder umum di seluruh disk..." -ForegroundColor Yellow
     $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    $targetFolderNames = @(
+    
+    $commonSubPaths = @(
+        "online game\HoYoPlay\games\Star Rail",
+        "online game\HoYoPlay\games\Star Rail Games",
+        "online game\Star Rail",
+        "online game\Star Rail Games",
+        "Game\HoYoPlay\games\Star Rail Games",
+        "Game\HoYoPlay\games\Star Rail",
+        "Games\HoYoPlay\games\Star Rail Games",
+        "Games\HoYoPlay\games\Star Rail",
+        "HoYoPlay\games\Star Rail Games",
+        "HoYoPlay\games\Star Rail",
+        "Star Rail\Games",
         "Star Rail Games",
         "Star Rail",
-        "Honkai: Star Rail",
-        "Honkai Star Rail"
+        "Honkai Star Rail",
+        "Program Files\Star Rail Games",
+        "Program Files\HoYoPlay\games\Star Rail"
     )
 
     foreach ($drive in $drives) {
-        $matchedFolders = Get-ChildItem -Path $drive -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
-        Where-Object { $targetFolderNames -contains $_.Name }
-
-        foreach ($folder in $matchedFolders) {
-            if (Test-Path (Join-Path $folder.FullName "StarRail_Data")) {
-                $gamePath = $folder.FullName
+        foreach ($sub in $commonSubPaths) {
+            $checkPath = Join-Path $drive $sub
+            if (Test-Path (Join-Path $checkPath "StarRail_Data")) {
+                $gamePath = $checkPath
                 Write-Host "Lokasi game ditemukan di: $gamePath" -ForegroundColor Green
                 break
             }
@@ -75,22 +97,9 @@ if (-not $gamePath) {
     }
 }
 
-if (-not $gamePath) {
-    Write-Host "Melakukan pemindaian cepat file StarRail.exe di seluruh disk..." -ForegroundColor Yellow
-    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    foreach ($drive in $drives) {
-        $foundExe = Get-ChildItem -Path $drive -Filter "StarRail.exe" -Recurse -Depth 5 -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($foundExe) {
-            $gamePath = $foundExe.DirectoryName
-            Write-Host "StarRail.exe ditemukan di: $gamePath" -ForegroundColor Green
-            break
-        }
-    }
-}
-
 if (-not $gamePath -or -not (Test-Path $gamePath)) {
     Write-Host "`nGagal menemukan folder install Star Rail secara otomatis." -ForegroundColor Red
-    $userPath = Read-Host "Silakan paste folder lokasi Star Rail secara manual (misal C:\online game\HoYoPlay\games\Star Rail)"
+    $userPath = Read-Host "Silakan paste folder lokasi Star Rail (misal C:\online game\HoYoPlay\games\Star Rail)"
     if ($userPath -and (Test-Path (Join-Path $userPath "StarRail_Data"))) {
         $gamePath = $userPath
     }
