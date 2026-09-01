@@ -17,7 +17,7 @@ foreach ($logPath in $localLowPaths) {
         if ($logContent -match "\[Subsystems\] Discovering subsystems at path (.*)") {
             $rawPath = $matches[1].Trim()
             $possiblePath = $rawPath.Replace("UnitySubsystems", "").Trim()
-            if (Test-Path $possiblePath) {
+            if (Test-Path (Join-Path $possiblePath "StarRail_Data")) {
                 $gamePath = $possiblePath
                 Write-Host "Lokasi game ditemukan lewat Player.log!" -ForegroundColor Green
                 break
@@ -28,16 +28,22 @@ foreach ($logPath in $localLowPaths) {
 
 if (-not $gamePath) {
     $regPaths = @(
+        "HKLM:\SOFTWARE\Cognosphere\Star Rail",
+        "HKLM:\SOFTWARE\miHoYo\Star Rail",
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Honkai: Star Rail",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail"
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+        "HKCU:\Software\Cognosphere\Star Rail",
+        "HKCU:\Software\miHoYo\Star Rail"
     )
     foreach ($reg in $regPaths) {
         if (Test-Path $reg) {
-            $installDir = (Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue).InstallLocation
-            if ($installDir -and (Test-Path $installDir)) {
-                $gamePath = $installDir
-                Write-Host "Lokasi game ditemukan lewat Windows Registry!" -ForegroundColor Green
+            $props = Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue
+            $dir = $props.InstallLocation
+            if (-not $dir) { $dir = $props.Path }
+            if ($dir -and (Test-Path (Join-Path $dir "StarRail_Data"))) {
+                $gamePath = $dir
+                Write-Host "Lokasi game ditemukan lewat Registry Windows!" -ForegroundColor Green
                 break
             }
         }
@@ -54,14 +60,19 @@ if (-not $gamePath) {
         "HoYoPlay\games\Star Rail Games",
         "Star Rail\Games",
         "Star Rail Games",
+        "Star Rail",
+        "Honkai Star Rail",
+        "Games\Star Rail",
+        "Games\Honkai Star Rail",
         "Program Files\Star Rail Games",
-        "Program Files\HoYoPlay\games\Star Rail Games"
+        "Program Files\HoYoPlay\games\Star Rail Games",
+        "Program Files (x86)\Star Rail Games"
     )
 
     foreach ($drive in $drives) {
         foreach ($sub in $commonSubPaths) {
             $checkPath = Join-Path $drive $sub
-            if (Test-Path $checkPath) {
+            if (Test-Path (Join-Path $checkPath "StarRail_Data")) {
                 $gamePath = $checkPath
                 Write-Host "Lokasi game ditemukan di: $gamePath" -ForegroundColor Green
                 break
@@ -71,23 +82,46 @@ if (-not $gamePath) {
     }
 }
 
+if (-not $gamePath) {
+    Write-Host "Melakukan pemindaian cepat StarRail.exe di seluruh disk..." -ForegroundColor Yellow
+    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
+    foreach ($drive in $drives) {
+        $foundExe = Get-ChildItem -Path $drive -Filter "StarRail.exe" -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($foundExe) {
+            $gamePath = $foundExe.DirectoryName
+            Write-Host "StarRail.exe ditemukan di: $gamePath" -ForegroundColor Green
+            break
+        }
+    }
+}
+
 if (-not $gamePath -or -not (Test-Path $gamePath)) {
-    Write-Host "`nGagal menemukan folder install Honkai: Star Rail secara otomatis." -ForegroundColor Red
-    Write-Host "Pastikan menu Warp History di dalam game SUDAH pernah dibuka!" -ForegroundColor Yellow
-    Read-Host "`nTekan ENTER untuk keluar..."
-    return
+    Write-Host "`nGagal menemukan folder install Star Rail secara otomatis." -ForegroundColor Red
+    $userPath = Read-Host "Silakan masukkan/paste folder lokasi Star Rail secara manual (misal D:\Games\Star Rail Games)"
+    if ($userPath -and (Test-Path $userPath)) {
+        $gamePath = $userPath
+    } else {
+        Write-Host "Folder tidak valid. Proses dibatalkan." -ForegroundColor Red
+        Read-Host "Tekan ENTER untuk keluar..."
+        return
+    }
 }
 
 Write-Host "Lokasi Game Terverifikasi: $gamePath" -ForegroundColor Cyan
 
 $webCachesDir = Join-Path $gamePath "StarRail_Data\webCaches"
+if (-not (Test-Path $webCachesDir)) {
+    # Coba alternatif subfolder cache
+    $webCachesDir = Join-Path $gamePath "StarRail_Data"
+}
+
 $latestCacheFile = Get-ChildItem -Path $webCachesDir -Recurse -Filter "data_2" -ErrorAction SilentlyContinue | 
     Sort-Object LastWriteTime -Descending | 
     Select-Object -First 1
 
 if (-not $latestCacheFile) {
     Write-Host "`nFile data_2 tidak ditemukan di $webCachesDir" -ForegroundColor Red
-    Write-Host "Pastikan menu Warp History di dalam game SUDAH dibuka!" -ForegroundColor Yellow
+    Write-Host "Pastikan menu Warp History di dalam game SUDAH pernah dibuka!" -ForegroundColor Yellow
     Read-Host "`nTekan ENTER untuk keluar..."
     return
 }
